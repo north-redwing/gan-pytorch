@@ -1,5 +1,5 @@
 # gan-pytorch
-This is a pytorch implementation of generation task on MNSIT, Fashion-MNIST and CIFAR10 with GAN.  
+This is a pytorch implementation of generation task on MNIST, Fashion-MNIST and CIFAR10 with GAN.  
 
 ## Usage
 You can find some options (hyperparameters) in function `get_args()` in `src/utils`.
