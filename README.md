@@ -8,7 +8,7 @@ You can find some options (hyperparameters) in function `get_args()` in `src/uti
 Execute `python main.py`.  
 You can set the options as `python main.py --lr 0.01`.
 
-- Google Coalaboratory  
+- Google Colaboratory  
 Use `exec.ipynb` on google colaboratory, which enables you to use GPU.
 
 ## Results
