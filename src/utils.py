@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import argparse
 import torch
 import torch.nn as nn
@@ -5,8 +7,14 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 
-def get_dataloader(path_to_dataset, dataset, image_size, batch_size):
+def get_dataloader(dataset='mnist', image_size=28, batch_size=64):
     """Get a data loader for mnist, fashion-mnist, cifar10."""
+    path_to_dataset = os.path.join(
+        Path(__file__).resolve().parents[2],
+        'datasets'
+    )
+    os.makedirs(path_to_dataset, exist_ok=True)
+
     transform = transforms.Compose([
         transforms.Resize((image_size, image_size)),
         transforms.ToTensor(),
@@ -75,6 +83,7 @@ def init_weights(net):
 def get_args():
     parser = argparse.ArgumentParser(description='GAN')
     parser.add_argument('--n_epoch', type=int, default=1)
+    parser.add_argument('--n_epoch_z_optim', type=int, default=5000)
     parser.add_argument('--n_sample', type=int, default=16)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--z_dim', type=int, default=62)
@@ -84,8 +93,9 @@ def get_args():
     parser.add_argument('--lr_Discriminator', type=float, default=0.0002)
     parser.add_argument('--beta1', type=float, default=0.5)
     parser.add_argument('--beta2', type=float, default=0.999)
+    parser.add_argument('--lam', type=float, default=0.1)
     parser.add_argument('--dataset', type=str, default='mnist')
-    parser.add_argument('--model', type=str, default='GAN')
+    parser.add_argument('--model', type=str, default='AnoGAN')
     parser.add_argument('--no_cuda', action='store_true', default=False)
     parser.add_argument('--no_hyperdash', action='store_true', default=False)
     parser.add_argument('--checkpoint_dir_name', type=str, default=None)

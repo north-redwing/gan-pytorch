@@ -24,26 +24,26 @@ class GAN(object):
             dir_name = self.args.checkpoint_dir_name
         else:
             dir_name = datetime.datetime.now().strftime('%y%m%d%H%M%S')
-        path_to_dir = Path(__file__).resolve().parents[1]
-        path_to_dir = os.path.join(path_to_dir, *['log', dir_name])
-        os.makedirs(path_to_dir, exist_ok=True)
+        self.path_to_dir = Path(__file__).resolve().parents[1]
+        self.path_to_dir = os.path.join(self.path_to_dir, *['log', dir_name])
+        os.makedirs(self.path_to_dir, exist_ok=True)
 
         # tensorboard
-        path_to_tensorboard = os.path.join(path_to_dir, 'tensorboard')
+        path_to_tensorboard = os.path.join(self.path_to_dir, 'tensorboard')
         os.makedirs(path_to_tensorboard, exist_ok=True)
         self.writer = SummaryWriter(path_to_tensorboard)
 
         # model saving
-        os.makedirs(os.path.join(path_to_dir, 'model'), exist_ok=True)
-        path_to_model = os.path.join(path_to_dir, *['model', 'model.tar'])
+        os.makedirs(os.path.join(self.path_to_dir, 'model'), exist_ok=True)
+        path_to_model = os.path.join(self.path_to_dir, *['model', 'model.tar'])
 
         # csv
-        os.makedirs(os.path.join(path_to_dir, 'csv'), exist_ok=True)
+        os.makedirs(os.path.join(self.path_to_dir, 'csv'), exist_ok=True)
         self.path_to_results_csv = os.path.join(
-            path_to_dir,
+            self.path_to_dir,
             *['csv', 'results.csv']
         )
-        path_to_args_csv = os.path.join(path_to_dir, *['csv', 'args.csv'])
+        path_to_args_csv = os.path.join(self.path_to_dir, *['csv', 'args.csv'])
         if not self.args.checkpoint_dir_name:
             with open(path_to_args_csv, 'a') as f:
                 args_dict = vars(self.args)
@@ -63,14 +63,7 @@ class GAN(object):
         else:
             self.exp = None
 
-        path_to_dataset = os.path.join(
-            Path(__file__).resolve().parents[2],
-            'datasets'
-        )
-        os.makedirs(path_to_dataset, exist_ok=True)
-
         self.dataloader = get_dataloader(
-            path_to_dataset,
             self.args.dataset,
             self.args.image_size,
             self.args.batch_size
@@ -78,9 +71,9 @@ class GAN(object):
         sample_data = self.dataloader.__iter__().__next__()[0]
         image_channels = sample_data.shape[1]
 
-        self.sample_z = torch.rand((self.args.batch_size, self.args.z_dim))
+        z = torch.randn(self.args.batch_size, self.args.z_dim)
+        self.sample_z = z.view(z.size(0), z.size(1), 1, 1)
 
-        print('\nGenerator --->')
         self.Generator = Generator(
             self.args.z_dim,
             image_channels,
@@ -91,18 +84,15 @@ class GAN(object):
             lr=self.args.lr_Generator,
             betas=(self.args.beta1, self.args.beta2)
         )
-        print(self.Generator)
         self.writer.add_graph(self.Generator, self.sample_z)
         self.Generator.to(self.args.device)
 
-        print('\nDiscriminator --->')
         self.Discriminator = Discriminator(image_channels, self.args.image_size)
         self.Discriminator_optimizer = optim.Adam(
             self.Discriminator.parameters(),
             lr=self.args.lr_Discriminator,
             betas=(self.args.beta1, self.args.beta2)
         )
-        print(self.Discriminator)
         self.writer.add_graph(self.Discriminator, sample_data)
         self.Discriminator.to(self.args.device)
 
@@ -112,9 +102,11 @@ class GAN(object):
 
     def train(self):
         self.train_hist = {}
-        self.train_hist['Generator_loss'] = []
-        self.train_hist['Discriminator_loss'] = []
+        self.train_hist['Generator_loss'] = 0.0
+        self.train_hist['Discriminator_loss'] = 0.0
 
+        # real ---> y = 1
+        # fake ---> y = 0
         self.y_real = torch.ones(self.args.batch_size, 1).to(self.args.device)
         self.y_fake = torch.zeros(self.args.batch_size, 1).to(self.args.device)
 
@@ -128,41 +120,53 @@ class GAN(object):
                 if idx == self.dataloader.dataset.__len__() // self.args.batch_size:
                     break
 
-                z = torch.rand((self.args.batch_size, self.args.z_dim))
+                z = torch.randn(self.args.batch_size, self.args.z_dim)
+                z = z.view(z.size(0), z.size(1), 1, 1)
                 z = z.to(self.args.device)
                 x = x.to(self.args.device)
 
                 # ----- update Discriminator -----
+                # minimize: -{ log[D(x)] + log[1-D(G(z))] }
                 self.Discriminator_optimizer.zero_grad()
                 # real
-                Discriminator_real = self.Discriminator(x)
+                # ---> log[D(x)]
+                Discriminator_real, _ = self.Discriminator(x)
                 Discriminator_real_loss = self.BCELoss(
                     Discriminator_real,
                     self.y_real
                 )
                 # fake
-                Discriminator_fake = self.Discriminator(self.Generator(z))
+                # ---> log[1-D(G(z))]
+                Discriminator_fake, _ = self.Discriminator(self.Generator(z))
                 Discriminator_fake_loss = self.BCELoss(
                     Discriminator_fake,
                     self.y_fake
                 )
 
                 Discriminator_loss = Discriminator_real_loss + Discriminator_fake_loss
-                self.train_hist['Discriminator_loss'].append(
-                    Discriminator_loss.item()
-                )
+                self.train_hist['Discriminator_loss'] = Discriminator_loss.item()
 
                 Discriminator_loss.backward()
                 self.Discriminator_optimizer.step()
 
                 # ----- update Generator -----
+                # As stated in the original paper,
+                # we want to train the Generator
+                # by minimizing log(1−D(G(z)))
+                # in an effort to generate better fakes.
+                # As mentioned, this was shown by Goodfellow
+                # to not provide sufficient gradients,
+                # especially early in the learning process.
+                # As a fix, we instead wish to maximize log(D(G(z))).
+                # ---> minimize: -log[D(G(z))]
+
                 self.Generator_optimizer.zero_grad()
-                Discriminator_fake = self.Discriminator(self.Generator(z))
+                Discriminator_fake, _ = self.Discriminator(self.Generator(z))
                 Generator_loss = self.BCELoss(
                     Discriminator_fake,
                     self.y_real
                 )
-                self.train_hist['Generator_loss'].append(Generator_loss.item())
+                self.train_hist['Generator_loss'] = Generator_loss.item()
                 Generator_loss.backward()
                 self.Generator_optimizer.step()
 
@@ -180,8 +184,10 @@ class GAN(object):
                 )
                 # csv
                 with open(self.path_to_results_csv, 'a') as f:
-                    result_writer = csv.DictWriter(f,
-                                                   list(self.train_hist.keys()))
+                    result_writer = csv.DictWriter(
+                        f,
+                        list(self.train_hist.keys())
+                    )
                     if epoch == 1 and idx == 0: result_writer.writeheader()
                     result_writer.writerow(self.train_hist)
                 # hyperdash
@@ -201,9 +207,7 @@ class GAN(object):
 
         elapsed_time = time() - self.start_time
         print('\nTraining Finish, elapsed time ---> %f' % (elapsed_time))
-        if self.exp:
-            self.exp.end()
-        self.writer.close()
+
 
     def _plot_sample(self, global_step):
         with torch.no_grad():

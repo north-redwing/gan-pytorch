@@ -1,9 +1,10 @@
 import torch.nn as nn
+from torchsummary import summary
 from utils import init_weights
 
 
 class Generator(nn.Module):
-    def __init__(self, z_dim, image_channels, image_size):
+    def __init__(self, z_dim=100, image_channels=1, image_size=28):
         super(Generator, self).__init__()
         self.z_dim = z_dim
         self.image_channels = image_channels
@@ -32,17 +33,23 @@ class Generator(nn.Module):
             nn.Tanh()
         )
         init_weights(self)
+        self._print_info()
 
     def forward(self, input):
-        x = self.fc(input)
-        x = x.view(-1, 128, (self.image_size // 4), (self.image_size // 4))
-        x = self.deconv(x)
+        input = input.reshape(-1, self.z_dim)
+        out = self.fc(input)
+        out = out.view(-1, 128, (self.image_size // 4), (self.image_size // 4))
+        out = self.deconv(out)
 
-        return x
+        return out
+
+    def _print_info(self):
+        print('\n[Generator summary]')
+        summary(self, (self.z_dim, 1, 1))
 
 
 class Discriminator(nn.Module):
-    def __init__(self, image_channels, image_size):
+    def __init__(self, image_channels=1, image_size=28):
         super(Discriminator, self).__init__()
         self.image_channels = image_channels
         self.image_size = image_size
@@ -67,13 +74,22 @@ class Discriminator(nn.Module):
             nn.Sigmoid()
         )
         init_weights(self)
+        self._print_info()
 
     def forward(self, input):
-        x = self.conv(input)
-        x = x.view(
-            -1,
-            128 * (self.image_size // 4) * (self.image_size // 4)
-        )
-        x = self.fc(x)
+        out = self.conv(input)
+        feature = out
+        feature = feature.view(feature.size()[0], -1)
+        out = out.view(-1, 128 * (self.image_size // 4) * (self.image_size // 4))
+        out = self.fc(out)
 
-        return x
+        return out, feature
+
+    def _print_info(self):
+        print('\n[Discriminator summary]')
+        summary(self, (3, self.image_size, self.image_size))
+
+
+if __name__ == '__main__':
+    G = Generator()
+    D = Discriminator()
